@@ -7,8 +7,9 @@ import requests
 import humanize
 import collections
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s')
+logging.getLogger('requests').setLevel(logging.WARN)
 
 class DockerRegsitryGc:
     def __init__(self, host, port, path):
@@ -32,17 +33,24 @@ class DockerRegsitryGc:
         url = "%s%s/blobs/sha256:%s" % (self.api_url, repository, blob)
         logging.debug("URL: %s" % url)
         res = requests.head(url)
-        assert res.status_code == 200, "Unable to request blob size for %s: %s" % (blob, res)
+        if res.status_code != 200:
+            logging.warn("Unable to request blob size for %s: %s" % (blob, res))
+            return None
+
         return int(res.headers['content-length'])
 
     def calculate_summary(self):
         counter = collections.defaultdict(lambda: [])
-        print self.blobs
         for (blob, name) in self.blobs.items():
-            counter[name].append(self._request_blob_size(name, blob))
+            size = self._request_blob_size(name, blob)
+            if size is not None:
+                counter[name].append(size)
         for (key, size) in sorted(map(lambda (key, sizes): (key, sum(sizes)), counter.items()),
-                                  key=lambda (key, size): size):
-            logging.info("[%s] : %s bytes" % (key, humanize.naturalsize(size, gnu=True)))
+                                  key=lambda (key, size): size, reverse=True):
+            logging.info("[%s] : %s" % (key, humanize.naturalsize(size, gnu=True)))
+
+        logging.info("Total size: %s" % humanize.naturalsize(sum(map(lambda (key, sizes): sum(sizes), counter.items())),
+                                                      gnu=True))
 
 
 if __name__ == "__main__":
